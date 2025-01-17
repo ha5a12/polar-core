@@ -215,10 +215,18 @@ export function convertEditorContext(
     }
   }
 
+  // FIXME: improve this conversion
   const convertFilepath = (filepath: Filepath) => {
-    if (filepath.kind === 'uri') {
+    if (filepath.kind === 'absolute-uri') {
       return {
         filepath: filepath.uri,
+        git_url: ''
+      }
+    }
+
+    if (filepath.kind === 'uri') {
+      return {
+        filepath: filepath.filepath,
         git_url: ''
       }
     }
@@ -237,6 +245,7 @@ export function convertEditorContext(
   }
 }
 
+// FIXME: improve this conversion
 export function getFilepathFromContext(context: FileContext): Filepath {
   if (context.git_url.length > 1 && !context.filepath.includes(':')) {
     return {
@@ -246,7 +255,7 @@ export function getFilepathFromContext(context: FileContext): Filepath {
     }
   } else {
     return {
-      kind: 'uri',
+      kind: 'absolute-uri',
       uri: context.filepath
     }
   }
