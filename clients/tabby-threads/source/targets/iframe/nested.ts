@@ -15,7 +15,7 @@ import { CHECK_MESSAGE, RESPONSE_MESSAGE } from "./shared";
  * const thread = createThreadFromInsideIframe();
  * await thread.sendMessage('Hello world!');
  */
-export function createThreadFromInsideIframe<
+export async function createThreadFromInsideIframe<
   Self = Record<string, never>,
   Target = Record<string, never>,
 >({
@@ -42,10 +42,17 @@ export function createThreadFromInsideIframe<
     ? new NestedAbortController(options.signal)
     : new AbortController();
 
-  const ready = () => {
-    const respond = () => parent.postMessage(RESPONSE_MESSAGE, targetOrigin);
+  const connectionPromise = new Promise<void>((resolve) => {
+    let isConnected = false;
 
-    // Handles wrappers that want to connect after the page has already loaded
+    const respond = () => {
+      if (!isConnected) {
+        isConnected = true;
+        parent.postMessage(RESPONSE_MESSAGE, targetOrigin);
+        resolve();
+      }
+    };
+
     self.addEventListener(
       "message",
       ({ data }) => {
@@ -54,27 +61,25 @@ export function createThreadFromInsideIframe<
       { signal: options.signal }
     );
 
-    respond();
-  };
+    if (document.readyState === "complete") {
+      respond();
+    } else {
+      document.addEventListener(
+        "readystatechange",
+        () => {
+          if (document.readyState === "complete") {
+            respond();
+            abort.abort();
+          }
+        },
+        { signal: abort.signal }
+      );
+    }
+  });
 
-  // Listening to `readyState` in iframe, though the child iframe could probably
-  // send a `postMessage` that it is ready to receive messages sooner than that.
-  if (document.readyState === "complete") {
-    ready();
-  } else {
-    document.addEventListener(
-      "readystatechange",
-      () => {
-        if (document.readyState === "complete") {
-          ready();
-          abort.abort();
-        }
-      },
-      { signal: abort.signal }
-    );
-  }
+  await connectionPromise;
 
-  return createThread(
+  const thread = await createThread(
     {
       send(message, transfer) {
         return parent.postMessage(message, targetOrigin, transfer);
@@ -92,4 +97,8 @@ export function createThreadFromInsideIframe<
     },
     options
   );
+
+  await thread.requestMethods();
+
+  return thread;
 }

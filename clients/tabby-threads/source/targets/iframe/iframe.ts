@@ -16,7 +16,7 @@ import { CHECK_MESSAGE, RESPONSE_MESSAGE } from "./shared";
  * const thread = createThreadFromInsideIframe(iframe);
  * await thread.sendMessage('Hello world!');
  */
-export function createThreadFromIframe<
+export async function createThreadFromIframe<
   Self = Record<string, never>,
   Target = Record<string, never>,
 >(
@@ -70,7 +70,9 @@ export function createThreadFromIframe<
     sendMessage(CHECK_MESSAGE);
   });
 
-  return createThread(
+  await connectedPromise;
+
+  const thread = await createThread(
     {
       send(message, transfer) {
         if (!connected) {
@@ -78,7 +80,6 @@ export function createThreadFromIframe<
             if (connected) return sendMessage(message, transfer);
           });
         }
-
         return sendMessage(message, transfer);
       },
       listen(listen, { signal }) {
@@ -95,4 +96,10 @@ export function createThreadFromIframe<
     },
     options
   );
+
+  // FIXME(Sma1lboy): We don't have this need for now.
+  // After connection is established and thread is created, exchange methods
+  await thread.requestMethods();
+
+  return thread;
 }

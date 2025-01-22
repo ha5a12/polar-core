@@ -2,17 +2,19 @@ import type { Webview } from "vscode";
 import type { ServerApi, ClientApiMethods } from "tabby-chat-panel";
 import { createThread, type ThreadOptions } from "tabby-threads";
 
-function createThreadFromWebview<Self = Record<string, never>, Target = Record<string, never>>(
+async function createThreadFromWebview<Self = Record<string, never>, Target = Record<string, never>>(
   webview: Webview,
   options?: ThreadOptions<Self, Target>,
 ) {
-  return createThread(
+  const thread = await createThread(
     {
       send(message) {
         webview.postMessage({ action: "postMessageToChatPanel", message });
       },
       listen(listener, { signal }) {
-        const { dispose } = webview.onDidReceiveMessage(listener);
+        const { dispose } = webview.onDidReceiveMessage((msg) => {
+          listener(msg);
+        });
         signal?.addEventListener("abort", () => {
           dispose();
         });
@@ -20,10 +22,11 @@ function createThreadFromWebview<Self = Record<string, never>, Target = Record<s
     },
     options,
   );
+  return thread;
 }
 
-export function createClient(webview: Webview, api: ClientApiMethods): ServerApi {
-  return createThreadFromWebview(webview, {
+export async function createClient(webview: Webview, api: ClientApiMethods): Promise<ServerApi> {
+  return await createThreadFromWebview(webview, {
     expose: {
       refresh: api.refresh,
       onApplyInEditor: api.onApplyInEditor,

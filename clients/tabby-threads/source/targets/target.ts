@@ -4,15 +4,11 @@ import type {
   ThreadEncoder,
   ThreadEncoderApi,
   AnyFunction,
-} from "../types.ts";
+} from "../types";
 
-import {
-  RELEASE_METHOD,
-  RETAINED_BY,
-  RETAIN_METHOD,
-  StackFrame,
-  isMemoryManageable,
-} from "../memory";
+import { RELEASE_METHOD, RETAINED_BY, RETAIN_METHOD } from "../constants";
+
+import { StackFrame, isMemoryManageable } from "../memory";
 import { createBasicEncoder } from "../encoding/basic";
 
 export type { ThreadTarget };
@@ -69,6 +65,7 @@ const RELEASE = 3;
 const FUNCTION_APPLY = 5;
 const FUNCTION_RESULT = 6;
 const CHECK_CAPABILITY = 7;
+const EXPOSE_LIST = 8;
 
 interface MessageMap {
   [CALL]: [string, string | number, any];
@@ -78,6 +75,7 @@ interface MessageMap {
   [FUNCTION_APPLY]: [string, string, any];
   [FUNCTION_RESULT]: [string, Error?, any?];
   [CHECK_CAPABILITY]: [string, string];
+  [EXPOSE_LIST]: [string, string[]];
 }
 
 type MessageData = {
@@ -88,7 +86,7 @@ type MessageData = {
  * Creates a thread from any object that conforms to the `ThreadTarget`
  * interface.
  */
-export function createThread<
+export async function createThread<
   Self = Record<string, never>,
   Target = Record<string, never>,
 >(
@@ -100,12 +98,15 @@ export function createThread<
     uuid = defaultUuid,
     encoder = createBasicEncoder(),
   }: ThreadOptions<Self, Target> = {}
-): Thread<Target> {
+): Promise<Thread<Target>> {
   let terminated = false;
   const activeApi = new Map<string | number, AnyFunction>();
   const functionsToId = new Map<AnyFunction, string>();
   const idsToFunction = new Map<string, AnyFunction>();
   const idsToProxy = new Map<string, AnyFunction>();
+
+  // Cache for the other side's methods
+  let theirMethodsCache: string[] | null = null;
 
   if (expose) {
     for (const key of Object.keys(expose)) {
@@ -120,8 +121,43 @@ export function createThread<
       ...args: MessageMap[typeof FUNCTION_RESULT] | MessageMap[typeof RESULT]
     ) => void
   >();
+  // Create a function to request methods from the other side
+  const requestMethods = async () => {
+    // If we have cached methods and connection is still active, return them
+    if (theirMethodsCache !== null && !terminated) {
+      return theirMethodsCache;
+    }
 
-  const call = createCallable<Thread<Target>>(handlerForCall, callable);
+    const id = uuid();
+
+    // Create a promise that will resolve with the other side's methods
+    const methodsPromise = new Promise<string[]>((resolve) => {
+      callIdsToResolver.set(id, (_, __, value) => {
+        const theirMethods = encoder.decode(value, encoderApi) as string[];
+        // Cache the methods for future use
+        theirMethodsCache = theirMethods;
+        resolve(theirMethods);
+      });
+    });
+
+    // Send EXPOSE_LIST with empty methods array to request other side's methods
+    send(EXPOSE_LIST, [id, []]);
+
+    return methodsPromise;
+  };
+
+  // Create proxy for method calls
+  const call = createCallable<Thread<Target>>(
+    handlerForCall,
+    callable,
+    {
+      requestMethods,
+    },
+    {
+      getMethodsCache: () => theirMethodsCache,
+      isTerminated: () => terminated,
+    }
+  );
 
   const encoderApi: ThreadEncoderApi = {
     functions: {
@@ -207,6 +243,7 @@ export function createThread<
     functionsToId.clear();
     idsToFunction.clear();
     idsToProxy.clear();
+    theirMethodsCache = null; // Clear the cache when connection is terminated
   };
 
   signal?.addEventListener(
@@ -227,11 +264,14 @@ export function createThread<
     args: MessageMap[Type],
     transferables?: Transferable[]
   ) {
-    if (terminated) return;
+    if (terminated) {
+      return;
+    }
     target.send([type, args], transferables);
   }
 
   async function listener(rawData: unknown) {
+    // FIXME: don't ignore anything, just for testing now
     const isThreadMessageData =
       Array.isArray(rawData) &&
       typeof rawData[0] === "number" &&
@@ -333,6 +373,23 @@ export function createThread<
         send(RESULT, [id, undefined, encoder.encode(hasMethod, encoderApi)[0]]);
         break;
       }
+      case EXPOSE_LIST: {
+        const [id, theirMethods] = data[1];
+
+        // Store their methods for future use
+        const theirMethodsList = theirMethods as string[];
+        // Save their methods in cache
+        theirMethodsCache = theirMethodsList;
+        // Send back our methods as RESULT
+        const ourMethods = Array.from(activeApi.keys()).map(String);
+
+        send(RESULT, [
+          id,
+          undefined,
+          encoder.encode(ourMethods, encoderApi)[0],
+        ]);
+        break;
+      }
     }
   }
 
@@ -345,7 +402,7 @@ export function createThread<
 
         if (typeof property !== "string" && typeof property !== "number") {
           throw new Error(
-            `Can’t call a symbol method on a thread: ${property.toString()}`
+            `Can't call a symbol method on a thread: ${property.toString()}`
           );
         }
 
@@ -430,7 +487,14 @@ function createCallable<T>(
   handlerForCall: (
     property: string | number | symbol
   ) => AnyFunction | undefined,
-  callable?: (keyof T)[]
+  callable?: (keyof T)[],
+  methods?: {
+    requestMethods: () => Promise<string[]>;
+  },
+  state?: {
+    getMethodsCache: () => string[] | null;
+    isTerminated: () => boolean;
+  }
 ): T {
   let call: any;
 
@@ -447,6 +511,25 @@ function createCallable<T>(
       {},
       {
         get(_target, property) {
+          if (property === "then") return undefined;
+          if (property === "requestMethods") {
+            return methods?.requestMethods;
+          }
+          if (property === "supports") {
+            return new Proxy(
+              {},
+              {
+                get(_target, method: string) {
+                  if (!state) return false;
+                  const cache = state.getMethodsCache();
+                  if (cache !== null && !state.isTerminated()) {
+                    return cache.includes(method);
+                  }
+                  return false;
+                },
+              }
+            );
+          }
           if (cache.has(property)) {
             return cache.get(property);
           }
@@ -454,6 +537,19 @@ function createCallable<T>(
           const handler = handlerForCall(property);
           cache.set(property, handler);
           return handler;
+        },
+        has(_target, property) {
+          if (property === "then" || property === "requestMethods") {
+            return true;
+          }
+          if (!state) {
+            return false;
+          }
+          const cache = state.getMethodsCache();
+          if (cache !== null && !state.isTerminated()) {
+            return cache.includes(String(property));
+          }
+          return false;
         },
       }
     );
