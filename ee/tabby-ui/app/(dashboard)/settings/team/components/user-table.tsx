@@ -333,11 +333,14 @@ function OperationView({
             </TooltipTrigger>
             <TooltipContent
               side="left"
-              sideOffset={8}
-              align="center"
+              sideOffset={8}align="start"
               hidden={!user.node.isSsoUser}
+              className="max-w-xs"
             >
-              <p>Cannot request password reset for SSO users</p>
+              <p>
+                The password reset feature cannot be used for users created
+                through SSO
+              </p>
             </TooltipContent>
           </Tooltip>
         </DropdownMenuContent>
