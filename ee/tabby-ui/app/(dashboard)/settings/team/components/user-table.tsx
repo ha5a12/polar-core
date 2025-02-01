@@ -333,8 +333,7 @@ function OperationView({
             </TooltipTrigger>
             <TooltipContent
               side="left"
-              sideOffset={8}
-              align="start"
+              sideOffset={8}align="start"
               hidden={!user.node.isSsoUser}
               className="max-w-xs"
             >

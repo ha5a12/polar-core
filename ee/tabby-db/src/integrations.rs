@@ -68,7 +68,7 @@ impl DbConn {
         .execute(&self.pool)
         .await?;
         if res.rows_affected() != 1 {
-            return Err(anyhow!("No integration access token to delete"));
+            return Err(anyhow!("Integration access token missing to delete"));
         }
         Ok(())
     }

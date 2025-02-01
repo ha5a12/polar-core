@@ -1,15 +1,15 @@
-# Tabby Model Specification
+# Polar Model Specification
 
-Tabby organizes the models within a directory.
+Polar organizes the models within a directory.
 This document provides an explanation of the necessary contents for supporting model serving.
-A minimal Tabby model directory should include the following contents:
+A minimal Polar model directory should include the following contents:
 
 ```
-tabby.json
+polar.json
 ggml/model-00001-of-00001.gguf
 ```
 
-### tabby.json
+### polar.json
 
 This file provides meta information about the model. An example file appears as follows:
 
@@ -29,10 +29,10 @@ The **chat_template** field is optional. When it is present, it is assumed that 
 ### ggml/
 
 This directory contains binary files used by the [llama.cpp](https://github.com/ggerganov/llama.cpp) inference engine.
-Tabby utilizes GGML for inference on `cpu`, `cuda` and `metal` devices.
+Polar utilizes GGML for inference on `cpu`, `cuda` and `metal` devices.
 
-Tabby saves GGUF model files in the format `model-{index}-of-{count}.gguf`, following the llama.cpp naming convention.
+Polar saves GGUF model files in the format `model-{index}-of-{count}.gguf`, following the llama.cpp naming convention.
 Please note that the index is 1-based,
-by default, Tabby names a single file model as `model-00001-of-00001.gguf`.
+by default, Polar names a single file model as `model-00001-of-00001.gguf`.
 
 For more details about GGUF models, please refer to the instructions in llama.cpp.
