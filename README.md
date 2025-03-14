@@ -11,9 +11,6 @@ Polar is a self-hosted DeFAI automation tool, offering an open-source solution t
 * An OpenAPI interface for seamless integration with existing workflows.
 * Compatibility with consumer-grade GPUs.
 
-<p align="center">
-  <a target="_blank" href="https://polardefai.com/"><img alt="Open Live Demo" src="https://img.shields.io/badge/OPEN_LIVE_DEMO-blue?logo=xcode&style=for-the-badge&logoColor=green"></a>
-</p>
 
 ## 🔥 What's New
 * **01/20/2025** Polar [v0.24.0-rc.1](https://github.com/ha5a12/polar-core/releases/tag/v0.24.0-rc.1) now supports Ethereum bridging! 🚀
